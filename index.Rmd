@@ -1,0 +1,86 @@
+---
+title: "Geo - Chart"
+author: "Lucas Teixeira"
+date: "28/05/2020"
+output: html_document
+---
+
+```{r, echo = F, message = F, warning = F, error = F, comment = F,results="asis",cache=F}
+library(leaflet)
+library(sf)
+library(dplyr)
+library(assertthat)
+
+wd <- getwd()
+setwd("C:\\Users\\Lucas Teixeira\\Documents\\JHU_DS\\brazilianPVMarket\\PV-Brazil")
+
+aneel <- read.csv("ANEEL2.csv",stringsAsFactors=F,fileEncoding="UTF-8")
+aneel$municipio <- tolower(aneel$municipio)
+aneel$data <- as.Date(aneel$data,"%Y-%m-%d")
+
+states <- st_read("states.shp",quiet=T)
+mun <- st_read("mun.shp",quiet=T)
+
+mun$name_mn <- tolower(mun$name_mn)
+
+max_city <- aneel %>% 
+        group_by(municipio) %>% 
+        summarize(pot = sum(potencia), qtde = n()) %>%
+        select(pot,qtde)%>%
+        sapply(max)
+
+max_state <- aneel %>% 
+        group_by(uf) %>% 
+        summarize(pot = sum(potencia), qtde = n()) %>% 
+        select(pot,qtde)%>%
+        sapply(max)
+
+aneel <- group_by(aneel,uf)
+db <- states
+merge.by <- c("abbrv_s","uf")
+ind <- rep(T,length(aneel$uf))
+
+summary <- aneel %>%
+        .[ind,]%>%
+        summarize(potencia = sum(potencia),qtde = n()) %>%
+        ungroup%>%
+        merge(db,.,by.x=merge.by[1],by.y=merge.by[2])
+
+popup <- paste0("<strong>UF: </strong>",
+                summary$abbrv_s,
+                "<br><strong>Power: </strong>",
+                paste(format(round(summary$potencia/1000,digits=0),big.mark=","),"MWp"))
+
+
+bins <- c(0, 1000, 5000, 20000, 50000, 10000, 250000, 500000, Inf)
+        
+pal <- colorBin("YlOrRd",
+                domain=summary[["potencia"]],
+                bins = bins)
+
+map <- summary %>% 
+        leaflet() %>%
+        addProviderTiles("CartoDB.Positron")%>%
+        addPolygons(fillColor = ~pal(potencia),
+                    fillOpacity = 0.8,
+                    color = "#BDBDC3",
+                    weight = 1,
+                    popup = popup,
+                    highlightOptions = highlightOptions(color = "black", weight = 2,
+                                                        bringToFront = TRUE)
+        )%>%
+        addPolylines(data = states,
+                     color="black", 
+                     opacity = 1,
+                     smoothFactor=1,
+                     weight = 1)%>%
+        addLegend("bottomright",pal=pal,opacity=1,values=~potencia,
+                  title="Power (kWp)")
+
+setwd(wd)
+
+library(htmlwidgets)
+
+saveWidget(map, 'map.html')
+cat('<iframe src="map.html" width="610" height="610" align="center" allowtransparency="true"> </iframe>')
+```
